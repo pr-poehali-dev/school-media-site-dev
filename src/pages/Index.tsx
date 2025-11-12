@@ -1,12 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Icon from '@/components/ui/icon';
 
+interface ForumTopic {
+  id: number;
+  title: string;
+  author: string;
+  category: string;
+  emoji: string;
+  views: number;
+  replies: number;
+  created_at: string;
+}
+
+interface ForumReply {
+  id: number;
+  author: string;
+  content: string;
+  likes: number;
+  created_at: string;
+}
+
+const FORUM_API = 'https://functions.poehali.dev/b5a77f7e-5949-4421-84bb-917c30b33f23';
+
 const Index = () => {
   const [activeSection, setActiveSection] = useState<string>('home');
+  const [forumTopics, setForumTopics] = useState<ForumTopic[]>([]);
+  const [selectedTopic, setSelectedTopic] = useState<ForumTopic | null>(null);
+  const [topicReplies, setTopicReplies] = useState<ForumReply[]>([]);
+  const [showNewTopicForm, setShowNewTopicForm] = useState(false);
+  const [newTopicData, setNewTopicData] = useState({ title: '', author: '', category: 'students', emoji: '💬' });
+  const [newReplyData, setNewReplyData] = useState({ author: '', content: '' });
+  const [loading, setLoading] = useState(false);
 
   const sections = [
     { id: 'home', title: 'Главная', icon: 'Home', color: 'bg-primary' },
@@ -336,6 +364,124 @@ const Index = () => {
     </Card>
   );
 
+  useEffect(() => {
+    if (activeSection === 'forum') {
+      loadForumTopics();
+    }
+  }, [activeSection]);
+
+  const loadForumTopics = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${FORUM_API}/?action=topics`);
+      const data = await response.json();
+      setForumTopics(data.topics || []);
+    } catch (error) {
+      console.error('Error loading topics:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTopicReplies = async (topicId: number) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${FORUM_API}/?action=replies&topic_id=${topicId}`);
+      const data = await response.json();
+      setTopicReplies(data.replies || []);
+    } catch (error) {
+      console.error('Error loading replies:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createNewTopic = async () => {
+    if (!newTopicData.title || !newTopicData.author) {
+      alert('Заполните название и имя автора!');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(FORUM_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_topic',
+          ...newTopicData
+        })
+      });
+      
+      if (response.ok) {
+        setShowNewTopicForm(false);
+        setNewTopicData({ title: '', author: '', category: 'students', emoji: '💬' });
+        await loadForumTopics();
+      }
+    } catch (error) {
+      console.error('Error creating topic:', error);
+      alert('Ошибка при создании темы');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createNewReply = async () => {
+    if (!newReplyData.author || !newReplyData.content || !selectedTopic) {
+      alert('Заполните все поля!');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(FORUM_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_reply',
+          topic_id: selectedTopic.id,
+          ...newReplyData
+        })
+      });
+      
+      if (response.ok) {
+        setNewReplyData({ author: '', content: '' });
+        await loadTopicReplies(selectedTopic.id);
+      }
+    } catch (error) {
+      console.error('Error creating reply:', error);
+      alert('Ошибка при отправке ответа');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const likeReply = async (replyId: number) => {
+    try {
+      await fetch(FORUM_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'like',
+          reply_id: replyId
+        })
+      });
+      
+      if (selectedTopic) {
+        await loadTopicReplies(selectedTopic.id);
+      }
+    } catch (error) {
+      console.error('Error liking reply:', error);
+    }
+  };
+
+  const openTopic = (topic: ForumTopic) => {
+    setSelectedTopic(topic);
+    loadTopicReplies(topic.id);
+  };
+
+  const emojiList = ['💬', '📐', '📚', '🚀', '⚽', '🎨', '🤖', '💡', '🎯', '🌟'];
+
   const renderForum = () => (
     <div className="animate-fade-in">
       <Card>
@@ -355,47 +501,228 @@ const Index = () => {
             </TabsList>
             
             <TabsContent value="all" className="space-y-4 mt-6">
-              <Button className="w-full" size="lg">
-                <Icon name="Plus" className="mr-2" size={20} />
-                Создать новую тему
-              </Button>
+              {selectedTopic ? (
+                <div className="space-y-6">
+                  <Button variant="ghost" onClick={() => setSelectedTopic(null)} className="mb-4">
+                    <Icon name="ArrowLeft" className="mr-2" size={18} />
+                    Назад к темам
+                  </Button>
 
-              <div className="space-y-3">
-                {[
-                  { title: 'Подготовка к олимпиаде по математике', author: 'Иванов И.', replies: 12, views: 45, category: 'students', emoji: '📐' },
-                  { title: 'Родительское собрание 15 ноября', author: 'Классный руководитель', replies: 8, views: 120, category: 'parents', emoji: '👨‍👩‍👧‍👦' },
-                  { title: 'Новые учебники по физике', author: 'Петрова А.С.', replies: 5, views: 34, category: 'teachers', emoji: '📚' },
-                  { title: 'Экскурсия в музей космонавтики', author: 'Сидоров П.', replies: 23, views: 89, category: 'students', emoji: '🚀' },
-                  { title: 'Обсуждение школьной формы', author: 'Родительский комитет', replies: 45, views: 230, category: 'parents', emoji: '👔' }
-                ].map((topic, index) => (
-                  <Card key={index} className="hover:shadow-lg transition-shadow cursor-pointer">
-                    <CardContent className="p-5">
+                  <Card className="bg-gradient-to-r from-purple-50 to-blue-50">
+                    <CardContent className="p-6">
                       <div className="flex items-start gap-4">
-                        <div className="text-4xl">{topic.emoji}</div>
+                        <div className="text-6xl">{selectedTopic.emoji}</div>
                         <div className="flex-1">
-                          <h4 className="font-semibold text-lg mb-2">{topic.title}</h4>
+                          <h2 className="text-3xl font-bold mb-2">{selectedTopic.title}</h2>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            <span>Автор: {topic.author}</span>
-                            <span className="flex items-center gap-1">
-                              <Icon name="MessageCircle" size={14} />
-                              {topic.replies}
-                            </span>
+                            <span>Автор: {selectedTopic.author}</span>
                             <span className="flex items-center gap-1">
                               <Icon name="Eye" size={14} />
-                              {topic.views}
+                              {selectedTopic.views}
                             </span>
-                            <Badge variant="outline">{
-                              topic.category === 'students' ? 'Ученики' :
-                              topic.category === 'teachers' ? 'Учителя' : 'Родители'
+                            <Badge>{
+                              selectedTopic.category === 'students' ? 'Ученики' :
+                              selectedTopic.category === 'teachers' ? 'Учителя' : 'Родители'
                             }</Badge>
                           </div>
                         </div>
-                        <Icon name="ChevronRight" className="text-muted-foreground" />
                       </div>
                     </CardContent>
                   </Card>
-                ))}
-              </div>
+
+                  <div className="space-y-4">
+                    {loading ? (
+                      <p className="text-center text-muted-foreground py-8">Загрузка сообщений...</p>
+                    ) : topicReplies.length > 0 ? (
+                      topicReplies.map((reply) => (
+                        <Card key={reply.id} className="hover:shadow-md transition-shadow">
+                          <CardContent className="p-5">
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <span className="font-semibold text-primary">{reply.author}</span>
+                                <span className="text-sm text-muted-foreground ml-3">
+                                  {new Date(reply.created_at).toLocaleDateString('ru-RU')}
+                                </span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => likeReply(reply.id)}
+                                className="gap-2"
+                              >
+                                <Icon name="ThumbsUp" size={16} />
+                                {reply.likes}
+                              </Button>
+                            </div>
+                            <p className="text-lg leading-relaxed">{reply.content}</p>
+                          </CardContent>
+                        </Card>
+                      ))
+                    ) : (
+                      <p className="text-center text-muted-foreground py-8">Пока нет сообщений. Будьте первым!</p>
+                    )}
+                  </div>
+
+                  <Card className="bg-gradient-to-r from-green-50 to-blue-50">
+                    <CardHeader>
+                      <CardTitle className="text-xl">Написать сообщение</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder="Ваше имя"
+                        value={newReplyData.author}
+                        onChange={(e) => setNewReplyData({ ...newReplyData, author: e.target.value })}
+                        className="w-full p-3 rounded-xl border-2 border-border focus:border-primary outline-none transition-colors"
+                      />
+                      <textarea
+                        placeholder="Ваше сообщение"
+                        value={newReplyData.content}
+                        onChange={(e) => setNewReplyData({ ...newReplyData, content: e.target.value })}
+                        rows={4}
+                        className="w-full p-3 rounded-xl border-2 border-border focus:border-primary outline-none transition-colors resize-none"
+                      />
+                      <Button
+                        className="w-full"
+                        size="lg"
+                        onClick={createNewReply}
+                        disabled={loading}
+                      >
+                        {loading ? 'Отправка...' : 'Отправить'}
+                        <Icon name="Send" className="ml-2" size={18} />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : showNewTopicForm ? (
+                <Card className="bg-gradient-to-r from-purple-50 to-pink-50">
+                  <CardHeader>
+                    <CardTitle className="text-2xl">Создать новую тему</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold mb-2">Название темы</label>
+                      <input
+                        type="text"
+                        placeholder="О чём хотите поговорить?"
+                        value={newTopicData.title}
+                        onChange={(e) => setNewTopicData({ ...newTopicData, title: e.target.value })}
+                        className="w-full p-3 rounded-xl border-2 border-border focus:border-primary outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold mb-2">Ваше имя</label>
+                      <input
+                        type="text"
+                        placeholder="Как вас зовут?"
+                        value={newTopicData.author}
+                        onChange={(e) => setNewTopicData({ ...newTopicData, author: e.target.value })}
+                        className="w-full p-3 rounded-xl border-2 border-border focus:border-primary outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold mb-2">Категория</label>
+                      <select
+                        value={newTopicData.category}
+                        onChange={(e) => setNewTopicData({ ...newTopicData, category: e.target.value })}
+                        className="w-full p-3 rounded-xl border-2 border-border focus:border-primary outline-none transition-colors"
+                      >
+                        <option value="students">Ученики</option>
+                        <option value="teachers">Учителя</option>
+                        <option value="parents">Родители</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold mb-2">Выберите эмодзи</label>
+                      <div className="flex gap-2 flex-wrap">
+                        {emojiList.map((emoji) => (
+                          <button
+                            key={emoji}
+                            onClick={() => setNewTopicData({ ...newTopicData, emoji })}
+                            className={`text-3xl p-2 rounded-xl transition-all hover:scale-110 ${
+                              newTopicData.emoji === emoji ? 'bg-primary/20 ring-2 ring-primary' : 'bg-white'
+                            }`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <Button
+                        className="flex-1"
+                        size="lg"
+                        onClick={createNewTopic}
+                        disabled={loading}
+                      >
+                        {loading ? 'Создание...' : 'Создать тему'}
+                        <Icon name="Plus" className="ml-2" size={18} />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={() => setShowNewTopicForm(false)}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  <Button
+                    className="w-full"
+                    size="lg"
+                    onClick={() => setShowNewTopicForm(true)}
+                  >
+                    <Icon name="Plus" className="mr-2" size={20} />
+                    Создать новую тему
+                  </Button>
+
+                  {loading ? (
+                    <p className="text-center text-muted-foreground py-8">Загрузка тем...</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {forumTopics.map((topic) => (
+                        <Card
+                          key={topic.id}
+                          className="hover:shadow-lg transition-shadow cursor-pointer"
+                          onClick={() => openTopic(topic)}
+                        >
+                          <CardContent className="p-5">
+                            <div className="flex items-start gap-4">
+                              <div className="text-4xl">{topic.emoji}</div>
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-lg mb-2">{topic.title}</h4>
+                                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                  <span>Автор: {topic.author}</span>
+                                  <span className="flex items-center gap-1">
+                                    <Icon name="MessageCircle" size={14} />
+                                    {topic.replies}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Icon name="Eye" size={14} />
+                                    {topic.views}
+                                  </span>
+                                  <Badge variant="outline">{
+                                    topic.category === 'students' ? 'Ученики' :
+                                    topic.category === 'teachers' ? 'Учителя' : 'Родители'
+                                  }</Badge>
+                                </div>
+                              </div>
+                              <Icon name="ChevronRight" className="text-muted-foreground" />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </TabsContent>
 
             <TabsContent value="students" className="mt-6">
